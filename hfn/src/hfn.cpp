@@ -414,6 +414,11 @@ void HFNWrapper::registerStatusCallback(const boost::function<void(Status)> &cal
   callback_ = callback;
 }
 
+void HFNWrapper::registerFeedbackCallback(
+    const boost::function<void(const geometry_msgs::PoseStamped&)> &feedback) {
+  feedback_ = feedback;
+}
+
 HFNWrapper* HFNWrapper::ROSInit(ros::NodeHandle& nh) {
   Params p;
   nh.param("max_occ_dist", p.max_occ_dist, 0.5);
@@ -434,11 +439,12 @@ HFNWrapper* HFNWrapper::ROSInit(ros::NodeHandle& nh) {
   nh.param("occupied_threshold", p.occupied_threshold, 100);
   nh.param("allow_unknown_path", p.allow_unknown_path, true);
   nh.param("allow_unknown_los", p.allow_unknown_los, false);
-  nh.param("map_frame_id", p.map_frame, string("/map"));
-  nh.param("z_tol", p.z_tol, 0.1);
-  nh.param("z_control", p.z_control, false);
   nh.param("min_map_update", p.min_map_update, 0.0);
+  nh.param("publish_action_feedback", p.publish_action_feedback, false);
+  nh.param("map_frame_id", p.map_frame, string("/map"));
   p.name_space = nh.getNamespace();
+	nh.param("z_tol", p.z_tol, 0.1);
+  nh.param("z_control", p.z_control, false);
 
   HumanFriendlyNav *hfn = HumanFriendlyNav::ROSInit(nh);
 
@@ -500,6 +506,10 @@ void HFNWrapper::onPose(const geometry_msgs::PoseStamped &input) {
     }
   }
   goals_.erase(goals_.begin(), min_it);
+
+  if (params_.publish_action_feedback) {
+    feedback_(input);
+  }
 
   // check if reached goal or stuck
   geometry_msgs::Twist cmd;
@@ -844,6 +854,7 @@ MoveServer::MoveServer(const string &server_name, HFNWrapper *wrapper) :
 
   pnh_.param("stop_on_preempt", stop_on_preempt_, true);
   wrapper->registerStatusCallback(boost::bind(&MoveServer::hfnCallback, this, _1));
+  wrapper->registerFeedbackCallback(boost::bind(&MoveServer::feedbackCallback, this, _1));
 
   as_.registerGoalCallback(boost::bind(&MoveServer::goalCallback, this));
   as_.registerPreemptCallback(boost::bind(&MoveServer::preemptCallback, this));
@@ -857,6 +868,12 @@ void MoveServer::preemptCallback() {
   as_.setPreempted();
 }
 
+void MoveServer::feedbackCallback(const geometry_msgs::PoseStamped& pose) {
+  hfn::MoveFeedback feedback;
+  feedback.base_position = pose;
+  as_.publishFeedback(feedback);
+}
+
 void MoveServer::goalCallback() {
   hfn::MoveGoalConstPtr goal = as_.acceptNewGoal();
   if (!goal->stop) {
@@ -864,7 +881,7 @@ void MoveServer::goalCallback() {
       ROS_WARN("HFN was sent empty set of poses");
       wrapper_->stop();
       hfn::MoveResult result;
-      result.final_status = hfn::MoveResult::UNREACHABLE; 
+      result.final_status = hfn::MoveResult::UNREACHABLE;
       as_.setAborted(result);
     } else {
       ROS_INFO("%s got request to (%.2f, %.2f, %.2f)",
