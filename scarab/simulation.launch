@@ -1,0 +1,48 @@
+<launch>
+
+	<arg name="robot" default="scarab0" />
+  <arg name="map" default="/map" />
+  <arg name="odom" default="/odom_laser" />
+  <arg name="base_frame" default="base_link" />
+  <arg name="map_frame" default="map_hokuyo" />
+
+  <node name="map" pkg="map_server" type="map_server" output="screen"
+        args="$(find scarab)/maps/levine-4.yaml" >
+    <param name="frame_id" value="$(arg map_frame)" />
+  </node>
+
+  <node name="kinematic_sim" pkg="kinematic_sim" type="kinematic_sim"
+        output="screen" respawn="false">
+    <param name="publish_freq" value="10"/>
+    <param name="pub_global_frame" value="true"/>
+
+    <param name="base_frame_id" value="$(arg base_frame)"/>
+    <param name="global_frame_id" value="$(arg map_frame)"/>
+
+    <param name="noise_x_sd" value="0.0"/>
+    <param name="noise_y_sd" value="0.0"/>
+    <param name="noise_th_sd" value="0.0"/>
+
+    <param name="num_agents" value="1"/>
+
+    <param name="initial0" value="0.00 0.00 0.00"/>
+  </node>
+
+  <node name="laser" pkg="laser_simulator" type="laser_simulator"
+				output="screen" respawn="false">
+		<param name="frame_id" value="$(arg robot)/$(arg base_frame)"/>
+		<param name="offset/x" value="0.0"/>
+		<param name="offset/y" value="0.0"/>
+		<param name="offset/z" value="0.2"/>
+
+		<param name="noise_sd" value="0.003"/>
+
+		<rosparam file="$(find laser_simulator)/models/UTM_30.yaml" command="load" />
+		<rosparam file="$(find laser_simulator)/config/models.yaml" command="load" />
+
+		<remap from="~map" to="$(arg map)"/>
+		<remap from="~odom" to="/$(arg robot)/gt_odom"/>
+		<remap from="~scan" to="/scan" />
+	</node>
+
+</launch>
